@@ -1,0 +1,101 @@
+Amanda GPFS-snapshot Plugin
+==========================
+
+This plugin provides support for GPFS snapshots in Amanda dumps.  It interfaces
+with Amanda through the [Script API][1].
+
+Install
+-------
+
+Sorry, there's no Makefile yet. Simply copy the amgpfs-snapshot script into
+Amanda's application directory.
+
+For example:
+
+    install -m 755 -o root -g root amgpfs-snapshot /usr/lib/amanda/application/amgpfs-snapshot
+
+You may need to edit the location of Amanda's Perl libraries in the script
+itself, the following line.
+
+    use lib '/usr/lib/amanda/perl/';
+
+Configure Amanda
+----------------
+
+Somewhere in your Amanda config you must define a `script-tool` that loads the
+plugin. You can simply include the provided `gpfs-snapshot.conf` file if you like.
+
+    cp gpfs-snapshot.conf /etc/amanda/DailySet1/gpfs-snapshot.conf
+    echo 'includefile "gpfs-snapshot.conf"' >> /etc/amanda/DailySet1/amanda.conf
+
+Once you have the `gpfs-snapshot` `script-tool` defined, you can include it in
+a `dumptype` definition. Note, however, that your dumptype _must use an
+application-tool program_: Only application-tool programs can handle the
+alternate mount point—of the snapshot device—that the script defines.
+
+    define dumptype gpfs-comp-amgtar {
+      comment "GPFS snapshot dumped with amgtar"
+      global
+      program "APPLICATION"
+      application "app_amgtar"
+      script "gpfs-snapshot"
+      compress client fast
+      index
+    }
+
+### Parallel Backups
+
+To allow Amanda to dump more than one snapshot of the same volume in parallel,
+you must specify a snapshot size (in PEs) such that multiple snapshots can fit
+in the available free space—by default, all available free space is used.
+
+For example, if you had a volume with 1000 free extents and required that up
+to four backups could successfully run in parallel, you would specify the
+following configuration in `gpfs-snapshot.conf`.
+
+      property "SNAPSHOT-SIZE" "250"
+
+Configure Permissions
+---------------------
+
+This plugin requires elevated permissions in order to create and remove GPFS
+devices. There are two ways to provide access: setting setuid on the plugin
+script itself, or by configuring `sudo` to allow execution of the GPFS
+programs.
+
+### setuid
+
+NOTE: I'm currently having trouble getting this to work right, as Amanda's
+Perl libraries don't seem to play nice with setuid scripts.
+
+For setuid, simply configure the ownership and mode on `amgpfs-snapshot`. In
+this example, `disk` is the group that Amanda runs under.
+
+    chown root:disk /usr/libexec/amanda/application/amgpfs-snapshot
+    chmod 4750 /usr/libexec/amanda/application/amgpfs-snapshot
+
+This will require that you have a version of Perl installed that was compiled
+with `ENABLE_SUIDPERL`.
+
+### sudo
+
+For sudo, add the following to the `/etc/sudoers` file where "amandabackup" is
+the name of your Amanda user.
+
+    amandabackup    ALL=(ALL) NOPASSWD: /sbin/lvcreate, /sbin/lvdisplay, /sbin/lvremove, /sbin/vgdisplay, /bin/readlink, /bin/mount, /bin/umount, /sbin/blkid
+
+The commands listed are those used by `amgpfs-snapshot` to interact with the
+GPFS volumes.
+
+Remember to enable the `SUDO` property. This is already included in the
+example `gpfs-snapshot.conf` file.
+
+    define script-tool gpfs-snapshot {
+      # ...
+      property "SUDO" "1"
+    }
+
+Enjoy,
+Daniel
+
+[1]: http://wiki.zmanda.com/index.php/Script_API
