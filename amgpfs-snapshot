@@ -47,7 +47,7 @@ use Symbol;
 sub new {
     my $class = shift;
     my ($execute_where, $config, $host, $disk, $device, $level, $index,
-        $message, $collection, $record, $mmcrsnapshot, $mmlssnapshot,
+        $message, $collection, $record, $mmcrsnapshot,
         $mmdelsnapshot, $sudo, $sleep) = @_;
     my $self = $class->SUPER::new($execute_where, $config);
 
@@ -63,7 +63,6 @@ sub new {
     $self->{record}         = $record;
 
     $self->{mmcrsnapshot}   = $mmcrsnapshot;
-    $self->{mmlssnapshot}   = $mmlssnapshot;
     $self->{mmdelsnapshot}  = $mmdelsnapshot;
 
     $self->{sudo}           = $sudo;
@@ -71,7 +70,7 @@ sub new {
     $self->{sleep}          = $sleep;
 
     $self->{fs_type}        = undef;
-    $self->{snap_path}      = undef;
+    $self->{snap_name}      = "amsnap";
 
     return $self;
 }
@@ -80,13 +79,11 @@ sub create_snapshot {
     my $self = shift;
 
     # create a new snapshot with mmcrsnapshot
-    my $snapshot_path = $self->get_snap_path(0);
-    $self->{snap_path} = $snapshot_path;
     $self->execute(1,
-        "$self->{mmcrsnapshot}", $self->{device}, $snapshot_path
+        "$self->{mmcrsnapshot}", $self->{device}, $self->{snap_name}
     );
 
-    debug("Created snapshot of `$self->{device}' at `$snapshot_path'.");
+    debug("Created snapshot of `$self->{device}' at `$self->{snap_name}'.");
 }
 
 # Executes (safely) the given command and arguments. Optional execution
@@ -133,15 +130,6 @@ sub execute {
     return @output;
 }
 
-# Returns the snapshot path.
-sub get_snap_path {
-    my $self = shift;
-    my $mapper = shift;
-
-    return "$self->{disk}/.snapshots/amsnap";
-
-}
-
 # Readlink wrapper.
 sub readlink {
     my $self = shift;
@@ -165,7 +153,7 @@ sub remove_snapshot {
     }
 
     # remove snapshot with 'mmdelsnapshot'
-    $self->execute(1, "$self->{mmdelsnapshot} ", $self->{device}, $self->get_snap_path(0));
+    $self->execute(1, "$self->{mmdelsnapshot} ", $self->{device}, $self->{snap_name});
 
     debug("Removed snapshot of `$self->{device}'.");
 }
@@ -187,8 +175,7 @@ sub resolve_device {
     $self->{fs_type} = $fs_type;
 
     debug(
-        "Resolved device `$self->{device}' ".
-        "` from mount point `$self->{disk}'."
+        "Resolved device $self->{device} from mount point $self->{disk}."
     );
 }
 
@@ -207,7 +194,7 @@ sub scan_mtab {
     while ($line = <MTAB>) {
         chomp($line);
         my ($device, $directory, $type) = split(/\s+/, $line);
-        $result = $sub->($self->readlink($device), $directory, $type);
+        $result = $sub->($device, $directory, $type);
         last if ($result);
     }
     close MTAB;
@@ -231,14 +218,6 @@ sub setup {
         chomp($self->{mmcrsnapshot} = `which mmcrsnapshot`);
         $self->print_to_server_and_die("",
             "mmcrsnapshot wasn't found.",
-            $Amanda::Script_App::ERROR
-        ) if $?;
-    }
-
-    if (!defined $self->{mmlssnapshot}) {
-        chomp($self->{mmlssnapshot} = `which mmlssnapshot`);
-        $self->print_to_server_and_die("",
-            "mmlssnapshot wasn't found.",
             $Amanda::Script_App::ERROR
         ) if $?;
     }
@@ -289,8 +268,8 @@ sub command_pre_dle_backup {
     $self->setup();
     $self->create_snapshot();
 
-    print "PROPERTY directory $self->{directory}\n";
-    print "PROPERTY device $self->{snap_path}\n";
+    print "PROPERTY device $self->{disk}\n";
+    print "PROPERTY directory $self->{disk}/.snapshots/$self->{snap_name}\n";
 }
 
 sub command_post_dle_backup {
@@ -306,8 +285,8 @@ sub command_pre_dle_amcheck {
     $self->setup();
     $self->create_snapshot();
 
-    print "PROPERTY directory $self->{directory}\n";
-    print "PROPERTY device $self->{snap_path}\n";
+    print "PROPERTY device $self->{disk}\n";
+    print "PROPERTY directory $self->{disk}/.snapshots/$self->{snap_name}\n";
 }
 
 sub command_post_dle_amcheck {
@@ -321,7 +300,7 @@ package main;
 
 sub usage {
     print <<EOF;
-Usage: amgpfs-snapshot <command> --execute-where=client --config=<config> --host=<host> --disk=<disk> --device=<device> --level=<level> --index=<yes|no> --message=<text> --collection=<no> --record=<yes|no> --mmcrsnapshot-path=<path> --mmlssnapshot-path=<path> --mmdelsnapshot-path=<path> --sudo=<0|1>.
+Usage: amgpfs-snapshot <command> --execute-where=client --config=<config> --host=<host> --disk=<disk> --device=<device> --level=<level> --index=<yes|no> --message=<text> --collection=<no> --record=<yes|no> --mmcrsnapshot-path=<path> --mmdelsnapshot-path=<path> --sudo=<0|1>.
 EOF
     exit(1);
 }
@@ -338,7 +317,6 @@ my $opt_collection;
 my $opt_record;
 
 my $opt_mmcrsnapshot;
-my $opt_mmlssnapshot;
 my $opt_mmdelsnapshot;
 my $opt_sudo;
 my $opt_sleep;
@@ -356,19 +334,18 @@ GetOptions(
     'collection=s'         => \$opt_collection,
     'record=s'             => \$opt_record,
     'mmcrsnapshot-path=s'  => \$opt_mmcrsnapshot,
-    'mmlssnapshot-path=s'  => \$opt_mmlssnapshot,
     'mmdelsnapshot-path=s' => \$opt_mmdelsnapshot,
     'sudo=s'               => \$opt_sudo,
     'sleep=i'              => \$opt_sleep,
 ) or usage();
 
 # add SBIN to PATH
-$ENV{'PATH'} = "/sbin:/usr/sbin:$ENV{'PATH'}:/usr/local/sbin";
+$ENV{'PATH'} = "/usr/lpp/mmfs/bin:/sbin:/usr/sbin:$ENV{'PATH'}:/usr/local/sbin";
 
 my $script = Amanda::Script::Amgpfs_snapshot->new($opt_execute_where,
     $opt_config, $opt_host, $opt_disk, $opt_device, \@opt_level, $opt_index,
     $opt_message, $opt_collection, $opt_record, $opt_mmcrsnapshot,
-    $opt_mmlssnapshot, $opt_mmdelsnapshot, $opt_sudo, $opt_sleep);
+    $opt_mmdelsnapshot, $opt_sudo, $opt_sleep);
 $script->do($ARGV[0]);
 
 # vim: set et sts=4 sw=4 :

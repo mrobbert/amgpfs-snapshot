@@ -82,7 +82,7 @@ with `ENABLE_SUIDPERL`.
 For sudo, add the following to the `/etc/sudoers` file where "amandabackup" is
 the name of your Amanda user.
 
-    amandabackup    ALL=(ALL) NOPASSWD: /sbin/lvcreate, /sbin/lvdisplay, /sbin/lvremove, /sbin/vgdisplay, /bin/readlink, /bin/mount, /bin/umount, /sbin/blkid
+    amandabackup    ALL=(ALL) NOPASSWD: /usr/lpp/mmfs/bin/mmcrsnapshot, /usr/lpp/mmfs/bin/mmlssnapshot, /usr/lpp/mmfs/bin/mmdelsnapshot, /bin/readlink
 
 The commands listed are those used by `amgpfs-snapshot` to interact with the
 GPFS volumes.
