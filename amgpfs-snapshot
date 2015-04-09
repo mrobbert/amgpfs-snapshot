@@ -174,7 +174,7 @@ sub remove_snapshot {
 sub resolve_device {
     my $self = shift;
 
-    # Search mtab for the mount point. Get the device path and filesystem type.
+    # Run df to get the mount point. Get the device path.
     my @ret = $self->execute(0, "$self->{df}", "$self->{device}");
     if ($ret[1] =~ /^(\S+)\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)/) {
         $self->{gpfsdev} = $1;
@@ -182,15 +182,15 @@ sub resolve_device {
     } else {
         debug("df returned: $ret[1]");
     }
-    #my $mnt_device = $self->scan_mtab(
-    #    sub { return $_[0] if ($_[1] =~ /^$self->{device}/); }
-    #);
 
+    # The gpfsdir is the device string with the mountpoint removed
+    $self->{gpfsdir} = $self->{device};
+    $self->{gpfsdir} =~ s/$self->{mountpoint}//;
+
+    # Scan mtab to get the FS type.
     my $fs_type = $self->scan_mtab(
         sub { return $_[2] if ($_[0] eq $self->{gpfsdev}); }
     );
-
-    #$self->{gpfsdev} = $gpfsdev;
     $self->{fs_type} = $fs_type;
 
     debug(
@@ -296,7 +296,7 @@ sub command_pre_dle_backup {
     $self->create_snapshot();
 
     print "PROPERTY device $self->{mountpoint}\n";
-    print "PROPERTY directory $self->{mountpoint}/.snapshots/$self->{disk}\n";
+    print "PROPERTY directory $self->{mountpoint}/.snapshots/$self->{disk}$self->{gpfsdir}\n";
 }
 
 sub command_post_dle_backup {
@@ -313,7 +313,7 @@ sub command_pre_dle_amcheck {
     $self->create_snapshot();
 
     print "PROPERTY device $self->{mountpoint}\n";
-    print "PROPERTY directory $self->{mountpoint}/.snapshots/$self->{disk}\n";
+    print "PROPERTY directory $self->{mountpoint}/.snapshots/$self->{disk}$self->{gpfsdir}\n";
 }
 
 sub command_post_dle_amcheck {
